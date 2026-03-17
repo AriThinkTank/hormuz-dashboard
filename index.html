@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>India Strategic Impact Dashboard – Hormuz Crisis 2026</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #ffffff;
+    color: #222;
+    margin: 20px;
+}
+
+h1 { margin-bottom: 5px; }
+h2 { font-size: 18px; }
+
+.container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.card {
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 15px;
+    background: #fafafa;
+}
+
+.critical { border-left: 6px solid red; }
+.stress { border-left: 6px solid orange; }
+.stable { border-left: 6px solid green; }
+
+button {
+    padding: 10px;
+    border: none;
+    background: #007BFF;
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-right: 10px;
+}
+
+.insight {
+    font-size: 13px;
+    margin-top: 8px;
+    color: #555;
+}
+
+#map { height: 300px; }
+
+select {
+    padding: 8px;
+    margin-top: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>India Economic & Strategic Dashboard – Hormuz Crisis (2026)</h1>
+
+<button onclick="refreshData()">🔄 Refresh</button>
+
+<select onchange="changeScenario(this.value)">
+<option value="base">Base Scenario</option>
+<option value="severe">Severe Disruption</option>
+<option value="extreme">Extreme Escalation</option>
+</select>
+
+<div class="container">
+
+<div class="card critical">
+<h2>Oil Shock</h2>
+<canvas id="oilChart"></canvas>
+<div class="insight">Oil shock is the primary transmission channel driving inflation and macro stress.</div>
+</div>
+
+<div class="card stress">
+<h2>INR/USD</h2>
+<canvas id="fxChart"></canvas>
+<div class="insight">Depreciation amplifies import costs and fuels inflation.</div>
+</div>
+
+<div class="card critical">
+<h2>Inflation Projection</h2>
+<canvas id="inflationChart"></canvas>
+<div class="insight">Projection based on oil + FX transmission model.</div>
+</div>
+
+<div class="card stress">
+<h2>Sector Stress</h2>
+<canvas id="sectorChart"></canvas>
+<div class="insight">Electronics & energy most exposed; pharma moderately exposed.</div>
+</div>
+
+<div class="card stable">
+<h2>Geospatial Chokepoints</h2>
+<div id="map"></div>
+<div class="insight">Hormuz blockade disrupts India's western energy corridor.</div>
+</div>
+
+<div class="card critical">
+<h2>System Complexity</h2>
+<canvas id="complexityChart"></canvas>
+<div class="insight">Identifies stress across oil, FX, supply chain and policy capacity.</div>
+</div>
+
+<div class="card critical">
+<h2>Policy Signals</h2>
+<ul id="policy"></ul>
+</div>
+
+</div>
+
+<div style="font-size:12px; margin-top:20px; color:#777;">
+Data sources: OilPriceAPI, ExchangeRate API, public fuel datasets.  
+Projections are model-based estimates derived from real-time inputs.
+</div>
+
+<script>
+
+// -------- APIs --------
+const OIL_API = "https://api.oilpriceapi.com/v1/demo/prices"
+const FX_API = "https://open.er-api.com/v6/latest/USD"
+
+// -------- STATE --------
+let scenario = "base"
+let charts = {}
+
+// -------- FETCH --------
+
+async function fetchOil() {
+    try {
+        let res = await fetch(OIL_API)
+        let data = await res.json()
+        return data.data[0].price
+    } catch { return 100 }
+}
+
+async function fetchFX() {
+    let res = await fetch(FX_API)
+    let data = await res.json()
+    return data.rates.INR
+}
+
+// -------- MODEL --------
+
+function compute(oil, fx) {
+
+    let multiplier = 1
+    if (scenario === "severe") multiplier = 1.15
+    if (scenario === "extreme") multiplier = 1.3
+
+    oil *= multiplier
+    fx *= (1 + (multiplier-1)/2)
+
+    let inflation = 5 + (oil-80)*0.04 + (fx-82)*0.25
+
+    return {
+        oil: [oil, oil*1.05, oil*1.1, oil*1.2],
+        fx: [fx, fx*1.02, fx*1.05, fx*1.08],
+        inflation: [inflation, inflation+0.7, inflation+1.5, inflation+2.5],
+        sectors: [
+            -(oil/80)*2,
+            -(fx/80)*5,
+            -(oil/70)*7,
+            -(inflation/5)*2
+        ],
+        complexity: [
+            Math.min(oil/15,10),
+            Math.min(fx/10,10),
+            9,
+            6,
+            7
+        ]
+    }
+}
+
+// -------- POLICY ENGINE --------
+
+function updatePolicy(oil, fx) {
+    let p = []
+
+    if (oil > 110) p.push("🔴 Release Strategic Petroleum Reserves")
+    if (fx > 85) p.push("🟠 RBI intervention in FX markets")
+    if (oil > 120) p.push("🔴 Fuel demand management & rationing")
+    if (oil > 115 && fx > 86) p.push("🔴 Activate emergency import diversification")
+
+    document.getElementById("policy").innerHTML = p.map(i=>`<li>${i}</li>`).join("")
+}
+
+// -------- CHARTS --------
+
+function draw(data) {
+
+    if (charts.oil) Object.values(charts).forEach(c => c.destroy())
+
+    charts.oil = new Chart(oilChart, {
+        type:'line',
+        data:{labels:['Now','15d','30d','60d'],datasets:[{data:data.oil}]}
+    })
+
+    charts.fx = new Chart(fxChart, {
+        type:'line',
+        data:{labels:['Now','15d','30d','60d'],datasets:[{data:data.fx}]}
+    })
+
+    charts.inflation = new Chart(inflationChart, {
+        type:'line',
+        data:{labels:['Now','15d','30d','60d'],datasets:[{data:data.inflation}]}
+    })
+
+    charts.sector = new Chart(sectorChart, {
+        type:'bar',
+        data:{labels:['Pharma','Electronics','Energy','FMCG'],datasets:[{data:data.sectors}]}
+    })
+
+    charts.complexity = new Chart(complexityChart, {
+        type:'radar',
+        data:{
+            labels:['Oil','FX','Supply Chain','Demand','Policy Capacity'],
+            datasets:[{data:data.complexity}]
+        }
+    })
+}
+
+// -------- MAP --------
+
+let map = L.map('map').setView([20, 70], 4)
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map)
+
+L.marker([26.5,56]).addTo(map).bindPopup("Hormuz Strait")
+L.marker([19.07,72.87]).addTo(map).bindPopup("Mumbai Port")
+L.marker([13.08,80.27]).addTo(map).bindPopup("Chennai Port")
+
+L.polyline([[26.5,56],[19.07,72.87]],{color:'red'}).addTo(map)
+
+// -------- MAIN --------
+
+async function loadData() {
+    const oil = await fetchOil()
+    const fx = await fetchFX()
+
+    const data = compute(oil, fx)
+
+    draw(data)
+    updatePolicy(oil, fx)
+}
+
+// -------- CONTROLS --------
+
+function refreshData() { loadData() }
+
+function changeScenario(s) {
+    scenario = s
+    loadData()
+}
+
+// -------- AUTO --------
+
+window.onload = loadData
+
+</script>
+
+</body>
+</html>
